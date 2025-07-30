@@ -1,54 +1,56 @@
-import { Hono } from 'hono'
+import { Router } from 'itty-router'
+import { createOpenAIImage, saveToFirestore, uploadToShopify } from './data.js'
 
-const app = new Hono()
+const router = Router()
 
-app.get('/', async (c) => {
-  const prompt = c.req.query('prompt') || 'Ultra high-resolution trading card of a mafia boss in Enigma Syndicate';
-
-  const OPENAI_API_KEY = c.env.OPENAI_API_KEY;
-  const apiURL = 'https://api.openai.com/v1/images/generations';
-
-  const openaiResponse = await fetch(apiURL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1024x1024'
-    })
-  });
-
-  const data = await openaiResponse.json();
-  const imageUrl = data?.data?.[0]?.url;
-
-  if (!imageUrl) {
-    return c.html(`
-      <html>
-        <body style="font-family: sans-serif; background: #111; color: white;">
-          <h1>❌ No image returned</h1>
-          <p>Check if your API key has access to DALL·E.</p>
-          <pre style="white-space: pre-wrap; background: #222; padding: 1em; border-radius: 6px;">
-${JSON.stringify(data, null, 2)}
-          </pre>
-        </body>
-      </html>
-    `)
-  }
-
-  return c.html(`
+router.get('/', () => {
+  return new Response(`
     <html>
-      <body style="font-family: sans-serif; text-align: center; background: #000; color: #fff;">
-        <h1>✅ Enigma Syndicate Card Generated</h1>
-        <p><strong>Prompt:</strong> ${prompt}</p>
-        <img src="${imageUrl}" alt="Generated Image" style="max-width: 100%; border: 4px solid #0ff; border-radius: 12px;" />
+      <head><title>Enigma Syndicate Generator</title></head>
+      <body style="font-family:sans-serif;padding:40px;background:#111;color:#fff;">
+        <h1>🎴 Enigma Syndicate Card Generator</h1>
+        <form method="POST" action="/generate">
+          <label>Enter Prompt:</label><br/>
+          <textarea name="prompt" style="width:100%;height:120px;"></textarea><br/><br/>
+          <button type="submit" style="padding:10px 20px;">Generate Card</button>
+        </form>
       </body>
-    </html>
-  `)
+    </html>`, { headers: { 'Content-Type': 'text/html' } })
 })
 
-export default app
+router.post('/generate', async (request) => {
+  const form = await request.formData()
+  const prompt = form.get('prompt')
 
+  if (!prompt) {
+    return new Response('No prompt submitted', { status: 400 })
+  }
+
+  // Step 1: Call OpenAI and get image
+  const imageUrl = await createOpenAIImage(prompt)
+
+  // Step 2: Store to Firestore
+  const docId = await saveToFirestore({ prompt, imageUrl })
+
+  // Step 3: Upload image to Shopify metafield
+  const shopifyUrl = await uploadToShopify({ imageUrl, prompt })
+
+  // Step 4: Show result page
+  return new Response(`
+    <html>
+      <head><title>Card Created</title></head>
+      <body style="font-family:sans-serif;padding:40px;background:#111;color:#fff;">
+        <h2>✅ Card Created</h2>
+        <p><strong>Prompt:</strong> ${prompt}</p>
+        <img src="${imageUrl}" style="max-width:100%;border:4px solid #444"/><br/>
+        <p>📁 <strong>Firestore ID:</strong> ${docId}</p>
+        <p>🛒 <strong>Shopify URL:</strong> <a href="${shopifyUrl}" target="_blank">${shopifyUrl}</a></p>
+        <p><a href="/">Generate Another</a></p>
+      </body>
+    </html>
+  `, { headers: { 'Content-Type': 'text/html' } })
+})
+
+export default {
+  fetch: router.handle
+}
