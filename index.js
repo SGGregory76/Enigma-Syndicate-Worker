@@ -1,99 +1,61 @@
-// index.js
+// index.js — Enigma Syndicate Generator Worker
 
-import { Hono } from 'hono'
-import { cors } from 'hono/cors'
-import { env } from 'hono/adapter'
-import { decode } from 'js-base64'
-import { initializeApp, cert } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
+import { OpenAI } from "openai";
+import { getFirestore } from "firebase-admin/firestore";
+import { initializeApp, cert } from "firebase-admin/app";
+import { decode } from "base64-arraybuffer";
 
-const app = new Hono()
-app.use('*', cors())
+export default {
+  async fetch(request, env, ctx) {
+    if (request.method === "POST") {
+      const body = await request.json();
+      const { prompt, customer, product } = body;
 
-let firebaseApp, db
+      const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+      const response = await openai.images.generate({
+        model: "dall-e-3",
+        prompt,
+        n: 1,
+        size: "1024x1024"
+      });
 
-app.post('/generate', async (c) => {
-  const { OPENAI_API_KEY, YOUR_FIREBASE_JSON_BASE64 } = env(c)
-  const body = await c.req.json()
-  const prompt = body.prompt || ''
+      const imageUrl = response.data[0].url;
 
-  if (!prompt || !OPENAI_API_KEY || !YOUR_FIREBASE_JSON_BASE64) {
-    return c.json({ error: 'Missing prompt or API keys' }, 400)
-  }
+      const firebaseJson = JSON.parse(
+        new TextDecoder().decode(decode(env.YOUR_FIREBASE_JSON_BASE64))
+      );
+      const app = initializeApp({ credential: cert(firebaseJson) });
+      const db = getFirestore(app);
 
-  // Init Firebase if needed
-  if (!firebaseApp) {
-    const firebaseConfig = JSON.parse(decode(YOUR_FIREBASE_JSON_BASE64))
-    firebaseApp = initializeApp({ credential: cert(firebaseConfig) })
-    db = getFirestore()
-  }
+      const cardRef = await db.collection("cards").add({
+        prompt,
+        imageUrl,
+        customer,
+        product,
+        created: Date.now()
+      });
 
-  // Generate image using OpenAI
-  const openaiRes = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'dall-e-3',
-      prompt,
-      size: '1024x1024',
-      quality: 'hd',
-      response_format: 'url'
-    })
-  })
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Card Created</title></head>
+          <body style="font-family:sans-serif;text-align:center;padding:40px">
+            <h1>🎴 Card Created</h1>
+            <img src="${imageUrl}" style="max-width:100%;border-radius:12px;border:4px solid black"/>
+            <p><strong>Prompt:</strong> ${prompt}</p>
+            <p><strong>Customer:</strong> ${customer}</p>
+            <p><strong>Product:</strong> ${product}</p>
+            <p><em>Firestore ID: ${cardRef.id}</em></p>
+          </body>
+        </html>
+      `;
 
-  const openaiData = await openaiRes.json()
-  const imageUrl = openaiData?.data?.[0]?.url
+      return new Response(html, { headers: { "Content-Type": "text/html" } });
+    }
 
-  if (!imageUrl) return c.json({ error: 'Image generation failed' }, 500)
-
-  const ref = await db.collection('cards').add({
-    prompt,
-    imageUrl,
-    created: Date.now()
-  })
-
-  return c.json({ imageUrl, id: ref.id })
-})
-
-app.get('/', (c) =>
-  c.html(`
-    <!DOCTYPE html>
-    <html>
-    <head><title>Enigma Syndicate Generator</title></head>
-    <body>
-      <h1>🃏 Enigma Syndicate Card Generator</h1>
-      <form id="genForm">
-        <input name="prompt" placeholder="Enter card prompt" required />
-        <button type="submit">Generate</button>
-      </form>
-      <div id="preview"></div>
-      <script>
-        const form = document.getElementById('genForm')
-        const preview = document.getElementById('preview')
-        form.onsubmit = async (e) => {
-          e.preventDefault()
-          const prompt = form.prompt.value
-          preview.innerHTML = 'Generating...'
-          const res = await fetch('/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt })
-          })
-          const data = await res.json()
-          if (data.imageUrl) {
-            preview.innerHTML = `<p>Card ID: ${data.id}</p><img src="${data.imageUrl}" style="max-width:100%" />`
-          } else {
-            preview.innerHTML = '<p>Failed to generate image.</p>'
-          }
-        }
-      </script>
-    </body>
-    </html>
-  `)
-)
-
-export default app
+    return new Response("Welcome to Enigma Syndicate Generator!", {
+      headers: { "Content-Type": "text/plain" },
+    });
+  },
+};
 
