@@ -9,8 +9,6 @@ YOUR_FIREBASE_JSON_BASE64 = "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2p
 command = "npx wrangler deploy"
 
 [observability.logs]
-enabled = true
-
-npx wrangler publish
+enabled :true
 
 
