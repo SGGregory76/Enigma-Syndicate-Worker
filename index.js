@@ -17,14 +17,10 @@ export default {
           model: "dall-e-3",
           prompt,
           n: 1,
-          size: "1024x1024",
-          response_format: "url"
+          size: "1024x1024"
         });
 
-        const imageUrl = response.data?.[0]?.url;
-        if (!imageUrl) {
-          return new Response("❌ Failed to generate image", { status: 500 });
-        }
+        const imageUrl = response.data[0].url;
 
         const firebaseJson = JSON.parse(
           new TextDecoder().decode(decode(env.YOUR_FIREBASE_JSON_BASE64))
@@ -56,9 +52,11 @@ export default {
         `;
 
         return new Response(html, { headers: { "Content-Type": "text/html" } });
-
       } catch (err) {
-        return new Response("❌ Error: " + err.message, { status: 500 });
+        return new Response(`Error: ${err.message}`, {
+          status: 500,
+          headers: { "Content-Type": "text/plain" },
+        });
       }
     }
 
@@ -67,4 +65,5 @@ export default {
     });
   },
 };
+
 
