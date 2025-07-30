@@ -1,73 +1,55 @@
-// index.js — Full Cloudflare Worker for Enigma Syndicate Card Generator
-
-import { decode } from 'https://esm.sh/@firebase/util@1.10.4';
-import { initializeApp, applicationDefault, cert } from 'https://esm.sh/firebase-admin/app';
-import { getFirestore } from 'https://esm.sh/firebase-admin/firestore';
-
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const prompt = url.searchParams.get("prompt");
-    const productId = url.searchParams.get("productId") || null;
-    const customerId = url.searchParams.get("customerId") || null;
+    const { searchParams } = new URL(request.url);
+    const prompt = searchParams.get("prompt");
 
     if (!prompt) {
       return new Response(`
         <html><body>
-          <h1>Card Generator</h1>
-          <form method="GET">
-            <label>Prompt: <input name="prompt" required /></label><br/>
-            <label>Product ID: <input name="productId" /></label><br/>
-            <label>Customer ID: <input name="customerId" /></label><br/>
-            <button type="submit">Generate</button>
-          </form>
-        </body></html>
-      `, { headers: { 'content-type': 'text/html' }});
+          <h1>Welcome to Enigma Syndicate</h1>
+          <p>No prompt provided. Add <code>?prompt=Your+Card+Prompt</code> to the URL.</p>
+        </body></html>`, {
+        headers: { "Content-Type": "text/html" }
+      });
     }
 
-    // Decode and initialize Firebase
-    const firebaseJson = JSON.parse(atob(env.YOUR_FIREBASE_JSON_BASE64));
-    const app = initializeApp({ credential: cert(firebaseJson) });
-    const db = getFirestore(app);
+    try {
+      const openaiResponse = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${env.OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "dall-e-3",
+          prompt,
+          size: "1024x1024",
+          response_format: "url"
+        })
+      });
 
-    // Call OpenAI API for image generation
-    const aiResponse = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        prompt,
-        n: 1,
-        size: "1024x1024",
-        response_format: "url"
-      })
-    });
+      const data = await openaiResponse.json();
+      const imageUrl = data.data?.[0]?.url;
 
-    const aiData = await aiResponse.json();
-    const imageUrl = aiData.data?.[0]?.url || "";
+      if (!imageUrl) {
+        return new Response(`<html><body><h1>❌ Failed to generate image.</h1><pre>${JSON.stringify(data, null, 2)}</pre></body></html>`, {
+          headers: { "Content-Type": "text/html" }
+        });
+      }
 
-    const cardData = {
-      prompt,
-      imageUrl,
-      productId,
-      customerId,
-      created: new Date().toISOString()
-    };
+      return new Response(`
+        <html><body>
+          <h1>✅ Generated Card</h1>
+          <img src="${imageUrl}" style="width:100%;max-width:512px;" />
+          <p>Prompt: <code>${prompt}</code></p>
+        </body></html>`, {
+        headers: { "Content-Type": "text/html" }
+      });
 
-    const docRef = await db.collection("cards").add(cardData);
-
-    const html = `
-      <html><body>
-        <h1>🃏 Card Generated</h1>
-        <img src="${imageUrl}" style="max-width: 300px; border: 5px solid black;" /><br/>
-        <p><strong>ID:</strong> ${docRef.id}</p>
-        <p><strong>Prompt:</strong> ${prompt}</p>
-        <p><strong>Saved to Firestore and ready for Shopify linkage.</strong></p>
-      </body></html>
-    `;
-
-    return new Response(html, { headers: { 'content-type': 'text/html' }});
+    } catch (err) {
+      return new Response(`<html><body><h1>🔥 Error generating image</h1><pre>${err.stack}</pre></body></html>`, {
+        headers: { "Content-Type": "text/html" }
+      });
+    }
   }
-}
+};
