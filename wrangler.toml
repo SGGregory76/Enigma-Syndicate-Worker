@@ -11,5 +11,6 @@ command = "npx wrangler deploy"
 [observability.logs]
 enabled = true
 
+npx wrangler publish
 
 
