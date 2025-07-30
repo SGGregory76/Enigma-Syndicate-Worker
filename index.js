@@ -1,74 +1,73 @@
-// index.js
-import { OpenAI } from "openai-edge";
-import { createClient } from "@supabase/supabase-js";
-import { decode } from "@firebase/util";
+// index.js — Full Cloudflare Worker for Enigma Syndicate Card Generator
+
+import { decode } from 'https://esm.sh/@firebase/util@1.10.4';
+import { initializeApp, applicationDefault, cert } from 'https://esm.sh/firebase-admin/app';
+import { getFirestore } from 'https://esm.sh/firebase-admin/firestore';
 
 export default {
   async fetch(request, env, ctx) {
-    const { searchParams } = new URL(request.url);
-    const prompt = searchParams.get("prompt");
-    const customerId = searchParams.get("customerId") || "anonymous";
-    const productId = searchParams.get("productId") || "none";
+    const url = new URL(request.url);
+    const prompt = url.searchParams.get("prompt");
+    const productId = url.searchParams.get("productId") || null;
+    const customerId = url.searchParams.get("customerId") || null;
 
     if (!prompt) {
-      return new Response("Missing prompt", { status: 400 });
+      return new Response(`
+        <html><body>
+          <h1>Card Generator</h1>
+          <form method="GET">
+            <label>Prompt: <input name="prompt" required /></label><br/>
+            <label>Product ID: <input name="productId" /></label><br/>
+            <label>Customer ID: <input name="customerId" /></label><br/>
+            <button type="submit">Generate</button>
+          </form>
+        </body></html>
+      `, { headers: { 'content-type': 'text/html' }});
     }
 
-    // Decode and init Firebase Admin
-    const adminJson = JSON.parse(atob(env.YOUR_FIREBASE_JSON_BASE64));
-    const projectId = adminJson.project_id;
+    // Decode and initialize Firebase
+    const firebaseJson = JSON.parse(atob(env.YOUR_FIREBASE_JSON_BASE64));
+    const app = initializeApp({ credential: cert(firebaseJson) });
+    const db = getFirestore(app);
 
-    // Generate Image from OpenAI
-    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-    const imageResp = await openai.images.generate({
-      model: "dall-e-3",
-      prompt,
-      size: "1024x1024",
-      response_format: "url",
+    // Call OpenAI API for image generation
+    const aiResponse = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        prompt,
+        n: 1,
+        size: "1024x1024",
+        response_format: "url"
+      })
     });
 
-    const imageUrl = imageResp.data[0]?.url;
+    const aiData = await aiResponse.json();
+    const imageUrl = aiData.data?.[0]?.url || "";
 
-    if (!imageUrl) {
-      return new Response("Failed to generate image", { status: 500 });
-    }
+    const cardData = {
+      prompt,
+      imageUrl,
+      productId,
+      customerId,
+      created: new Date().toISOString()
+    };
 
-    // Save metadata to Firestore
-    const id = crypto.randomUUID();
-    const now = Date.now();
+    const docRef = await db.collection("cards").add(cardData);
 
-    const write = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cards/${id}`,
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${env.GOOGLE_OAUTH_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fields: {
-            prompt: { stringValue: prompt },
-            imageUrl: { stringValue: imageUrl },
-            createdAt: { integerValue: now },
-            customerId: { stringValue: customerId },
-            productId: { stringValue: productId },
-          },
-        }),
-      }
-    );
-
-    // Return preview
     const html = `
-      <html><head><title>Card Preview</title></head><body>
-        <h1>Generated Card</h1>
-        <img src="${imageUrl}" style="max-width: 100%; height: auto;" />
+      <html><body>
+        <h1>🃏 Card Generated</h1>
+        <img src="${imageUrl}" style="max-width: 300px; border: 5px solid black;" /><br/>
+        <p><strong>ID:</strong> ${docRef.id}</p>
         <p><strong>Prompt:</strong> ${prompt}</p>
-        <p><strong>Saved to Firestore ID:</strong> ${id}</p>
+        <p><strong>Saved to Firestore and ready for Shopify linkage.</strong></p>
       </body></html>
     `;
 
-    return new Response(html, {
-      headers: { "Content-Type": "text/html" },
-    });
-  },
-};
+    return new Response(html, { headers: { 'content-type': 'text/html' }});
+  }
+}
