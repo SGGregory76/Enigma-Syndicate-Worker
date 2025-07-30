@@ -1,4 +1,4 @@
-name = "enigma-syndicate"
+name = "enigmasyndicate"
 main = "index.js"
 compatibility_date = "2024-07-30"
 usage_model = "bundled"
