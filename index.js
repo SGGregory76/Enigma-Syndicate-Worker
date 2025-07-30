@@ -5,13 +5,6 @@ import { decode } from "base64-arraybuffer";
 
 export default {
   async fetch(request, env, ctx) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders(),
-      });
-    }
-
     if (request.method === "POST") {
       try {
         const body = await request.json();
@@ -42,44 +35,24 @@ export default {
         });
 
         const html = `
-          <!DOCTYPE html>
-          <html>
-            <head><title>Card Created</title></head>
-            <body style="font-family:sans-serif;text-align:center;padding:40px">
-              <h1>🎴 Card Created</h1>
-              <img src="${imageUrl}" style="max-width:100%;border-radius:12px;border:4px solid black"/>
-              <p><strong>Prompt:</strong> ${prompt}</p>
-              <p><strong>Customer:</strong> ${customer}</p>
-              <p><strong>Product:</strong> ${product}</p>
-              <p><em>Firestore ID: ${cardRef.id}</em></p>
-            </body>
-          </html>
+          <html><body style="font-family:sans-serif;padding:40px;text-align:center">
+          <h2>🎴 Card Generated!</h2>
+          <img src="${imageUrl}" style="max-width:90%;border:4px solid #000;border-radius:10px"/>
+          <p><strong>Prompt:</strong> ${prompt}</p>
+          <p><em>Firestore ID: ${cardRef.id}</em></p>
+          </body></html>
         `;
-
-        return new Response(html, {
-          headers: {
-            "Content-Type": "text/html",
-            ...corsHeaders(),
-          },
-        });
+        return new Response(html, { headers: { "Content-Type": "text/html" } });
       } catch (err) {
-        return new Response("Error: " + err.message, {
+        return new Response(`❌ Error generating card: ${err}`, {
           status: 500,
-          headers: corsHeaders(),
+          headers: { "Content-Type": "text/plain" }
         });
       }
     }
 
-    return new Response("Welcome to Enigma Syndicate Generator!", {
-      headers: { "Content-Type": "text/plain", ...corsHeaders() },
+    return new Response("Welcome to Enigma Syndicate", {
+      headers: { "Content-Type": "text/plain" }
     });
-  },
+  }
 };
-
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  };
-}
