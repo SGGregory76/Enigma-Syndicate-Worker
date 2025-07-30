@@ -1,83 +1,48 @@
-// index.js — Enigma Syndicate Generator Worker
-
 import { OpenAI } from "openai";
-import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { initializeApp, cert } from "firebase-admin/app";
 import { decode } from "base64-arraybuffer";
 
-let firebaseApp = null;
+let app, db;
 
 export default {
   async fetch(request, env, ctx) {
-    if (request.method === "GET") {
-      const html = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Enigma Syndicate Generator</title>
-          </head>
-          <body style="font-family:sans-serif;text-align:center;padding:40px">
-            <h1>Enigma Syndicate Generator</h1>
-            <form method="POST">
-              <label for="prompt">Choose a prompt:</label><br/>
-              <select name="prompt" id="prompt">
-                <option value="A cyberpunk dog wearing sunglasses in the rain">Cyberpunk Dog</option>
-                <option value="A mafia boss made of cheese in a speakeasy">Mafia Cheese Boss</option>
-                <option value="A character with matches on hand and a gas can — burning buildings behind">Arsonist</option>
-              </select><br/><br/>
-              <input type="hidden" name="customer" value="demo_customer_id" />
-              <input type="hidden" name="product" value="demo_product_id" />
-              <button type="submit">Generate Card</button>
-            </form>
-          </body>
-        </html>
-      `;
-      return new Response(html, { headers: { "Content-Type": "text/html" } });
+    if (!app) {
+      const firebaseJson = JSON.parse(
+        new TextDecoder().decode(decode(env.YOUR_FIREBASE_JSON_BASE64))
+      );
+      app = initializeApp({ credential: cert(firebaseJson) });
+      db = getFirestore(app);
     }
 
     if (request.method === "POST") {
-      let formData;
-      const contentType = request.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        formData = await request.json();
-      } else {
-        const body = await request.text();
-        formData = Object.fromEntries(new URLSearchParams(body));
-      }
+      const formData = await request.formData();
+      const prompt = formData.get("prompt");
+      const customer = formData.get("customer") || "test_customer";
+      const product = formData.get("product") || "test_product";
 
-      const { prompt, customer, product } = formData;
+      try {
+        const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+        const response = await openai.images.generate({
+          model: "dall-e-3",
+          prompt,
+          n: 1,
+          size: "1024x1024"
+        });
 
-      const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-      const response = await openai.images.generate({
-        model: "dall-e-3",
-        prompt,
-        n: 1,
-        size: "1024x1024"
-      });
+        const imageUrl = response.data[0].url;
 
-      const imageUrl = response.data[0].url;
+        const cardRef = await db.collection("cards").add({
+          prompt,
+          imageUrl,
+          customer,
+          product,
+          created: Date.now()
+        });
 
-      if (!firebaseApp) {
-        const firebaseJson = JSON.parse(
-          new TextDecoder().decode(decode(env.YOUR_FIREBASE_JSON_BASE64))
-        );
-        firebaseApp = initializeApp({ credential: cert(firebaseJson) });
-      }
-
-      const db = getFirestore(firebaseApp);
-
-      const cardRef = await db.collection("cards").add({
-        prompt,
-        imageUrl,
-        customer,
-        product,
-        created: Date.now()
-      });
-
-      const html = `
-        <!DOCTYPE html>
-        <html>
-          <head><title>Card Created</title></head>
+        const html = `
+          <!DOCTYPE html>
+          <html><head><title>Card Created</title></head>
           <body style="font-family:sans-serif;text-align:center;padding:40px">
             <h1>🎴 Card Created</h1>
             <img src="${imageUrl}" style="max-width:100%;border-radius:12px;border:4px solid black"/>
@@ -85,13 +50,30 @@ export default {
             <p><strong>Customer:</strong> ${customer}</p>
             <p><strong>Product:</strong> ${product}</p>
             <p><em>Firestore ID: ${cardRef.id}</em></p>
-          </body>
-        </html>
-      `;
-
-      return new Response(html, { headers: { "Content-Type": "text/html" } });
+          </body></html>
+        `;
+        return new Response(html, { headers: { "Content-Type": "text/html" } });
+      } catch (err) {
+        return new Response("❌ Failed to generate image: " + err.message, { status: 500 });
+      }
     }
 
-    return new Response("Method Not Allowed", { status: 405 });
-  },
+    // Default GET request: show a test form
+    return new Response(`
+      <!DOCTYPE html>
+      <html><head><title>Enigma Generator</title></head>
+      <body style="font-family:sans-serif;padding:40px;">
+        <h1>🎴 Enigma Syndicate Card Generator</h1>
+        <form method="POST">
+          <select name="prompt" style="padding:8px;">
+            <option value="A cyberpunk dog wearing sunglasses">Cyberpunk Dog</option>
+            <option value="Mafia cheese boss in a speakeasy">Mafia Boss</option>
+          </select>
+          <input type="hidden" name="customer" value="test_customer"/>
+          <input type="hidden" name="product" value="test_product"/>
+          <button type="submit" style="padding:10px 20px;">Generate Card</button>
+        </form>
+      </body></html>
+    `, { headers: { "Content-Type": "text/html" } });
+  }
 };
