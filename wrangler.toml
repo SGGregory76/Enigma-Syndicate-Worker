@@ -4,6 +4,10 @@ compatibility_date = "2024-07-30"
 
 [vars]
 YOUR_FIREBASE_JSON_BASE64 = "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAic2FuZGJveC1tYWZpYSIsCiAg..."
+[vars]
+SHOPIFY_ADMIN_TOKEN = "shpat_..." # Your secure admin token
+SHOPIFY_PRODUCT_ID = "123456789"
+SHOPIFY_CUSTOMER_ID = "987654321"
 
 # Remove this section:
 # [build]
