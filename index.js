@@ -1,55 +1,54 @@
-export default {
-  async fetch(request, env, ctx) {
-    const { searchParams } = new URL(request.url);
-    const prompt = searchParams.get("prompt");
+import { Hono } from 'hono'
 
-    if (!prompt) {
-      return new Response(`
-        <html><body>
-          <h1>Welcome to Enigma Syndicate</h1>
-          <p>No prompt provided. Add <code>?prompt=Your+Card+Prompt</code> to the URL.</p>
-        </body></html>`, {
-        headers: { "Content-Type": "text/html" }
-      });
-    }
+const app = new Hono()
 
-    try {
-      const openaiResponse = await fetch("https://api.openai.com/v1/images/generations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "dall-e-3",
-          prompt,
-          size: "1024x1024",
-          response_format: "url"
-        })
-      });
+app.get('/', async (c) => {
+  const prompt = c.req.query('prompt') || 'Ultra high-resolution trading card of a mafia boss in Enigma Syndicate';
 
-      const data = await openaiResponse.json();
-      const imageUrl = data.data?.[0]?.url;
+  const OPENAI_API_KEY = c.env.OPENAI_API_KEY;
+  const apiURL = 'https://api.openai.com/v1/images/generations';
 
-      if (!imageUrl) {
-        return new Response(`<html><body><h1>❌ Failed to generate image.</h1><pre>${JSON.stringify(data, null, 2)}</pre></body></html>`, {
-          headers: { "Content-Type": "text/html" }
-        });
-      }
+  const openaiResponse = await fetch(apiURL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt,
+      n: 1,
+      size: '1024x1024'
+    })
+  });
 
-      return new Response(`
-        <html><body>
-          <h1>✅ Generated Card</h1>
-          <img src="${imageUrl}" style="width:100%;max-width:512px;" />
-          <p>Prompt: <code>${prompt}</code></p>
-        </body></html>`, {
-        headers: { "Content-Type": "text/html" }
-      });
+  const data = await openaiResponse.json();
+  const imageUrl = data?.data?.[0]?.url;
 
-    } catch (err) {
-      return new Response(`<html><body><h1>🔥 Error generating image</h1><pre>${err.stack}</pre></body></html>`, {
-        headers: { "Content-Type": "text/html" }
-      });
-    }
+  if (!imageUrl) {
+    return c.html(`
+      <html>
+        <body style="font-family: sans-serif; background: #111; color: white;">
+          <h1>❌ No image returned</h1>
+          <p>Check if your API key has access to DALL·E.</p>
+          <pre style="white-space: pre-wrap; background: #222; padding: 1em; border-radius: 6px;">
+${JSON.stringify(data, null, 2)}
+          </pre>
+        </body>
+      </html>
+    `)
   }
-};
+
+  return c.html(`
+    <html>
+      <body style="font-family: sans-serif; text-align: center; background: #000; color: #fff;">
+        <h1>✅ Enigma Syndicate Card Generated</h1>
+        <p><strong>Prompt:</strong> ${prompt}</p>
+        <img src="${imageUrl}" alt="Generated Image" style="max-width: 100%; border: 4px solid #0ff; border-radius: 12px;" />
+      </body>
+    </html>
+  `)
+})
+
+export default app
+
