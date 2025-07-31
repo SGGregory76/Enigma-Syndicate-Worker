@@ -5,6 +5,19 @@ import { decode } from "base64-arraybuffer";
 
 export default {
   async fetch(request, env, ctx) {
+    // Handle CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type"
+        }
+      });
+    }
+
+    // Handle card generation
     if (request.method === "POST") {
       try {
         const body = await request.json();
@@ -35,24 +48,49 @@ export default {
         });
 
         const html = `
-          <html><body style="font-family:sans-serif;padding:40px;text-align:center">
-          <h2>🎴 Card Generated!</h2>
-          <img src="${imageUrl}" style="max-width:90%;border:4px solid #000;border-radius:10px"/>
-          <p><strong>Prompt:</strong> ${prompt}</p>
-          <p><em>Firestore ID: ${cardRef.id}</em></p>
-          </body></html>
+          <!DOCTYPE html>
+          <html>
+            <head><title>Card Created</title></head>
+            <body style="font-family:sans-serif;text-align:center;padding:40px">
+              <h1>🎴 Card Created</h1>
+              <img src="${imageUrl}" style="max-width:100%;border-radius:12px;border:4px solid black"/>
+              <p><strong>Prompt:</strong> ${prompt}</p>
+              <p><strong>Customer:</strong> ${customer}</p>
+              <p><strong>Product:</strong> ${product}</p>
+              <p><em>Firestore ID: ${cardRef.id}</em></p>
+            </body>
+          </html>
         `;
-        return new Response(html, { headers: { "Content-Type": "text/html" } });
+
+        return new Response(html, {
+          headers: {
+            "Content-Type": "text/html",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type"
+          }
+        });
+
       } catch (err) {
-        return new Response(`❌ Error generating card: ${err}`, {
+        return new Response("Failed to generate card: " + err.message, {
           status: 500,
-          headers: { "Content-Type": "text/plain" }
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type"
+          }
         });
       }
     }
 
-    return new Response("Welcome to Enigma Syndicate", {
-      headers: { "Content-Type": "text/plain" }
+    // Default GET response
+    return new Response("Welcome to Enigma Syndicate Generator!", {
+      headers: {
+        "Content-Type": "text/plain",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
     });
   }
 };
