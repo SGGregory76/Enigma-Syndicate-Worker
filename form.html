@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Your Card</title>
+</head>
+<body style="font-family:sans-serif; text-align:center; padding:2rem">
+  <h1>🧠 Enigma Syndicate Generator</h1>
+  <p>Select a design style and generate your exclusive card.</p>
+
+  <form id="cardForm">
+    <label for="prompt">Choose a Card Prompt:</label><br>
+    <select id="prompt" name="prompt" required>
+      <option value="Cyberpunk hacker with glowing tattoos">Cyberpunk hacker</option>
+      <option value="Neon samurai in rain-soaked alley">Neon samurai</option>
+      <option value="Mutant dealer with briefcase of crypto chips">Mutant dealer</option>
+      <option value="Character with matches in one hand and gas can in the other, burning buildings behind">Arsonist scene</option>
+    </select><br><br>
+
+    <button type="submit">🔮 Generate Card</button>
+  </form>
+
+  <div id="result" style="margin-top:2rem;"></div>
+
+  <script>
+    const form = document.getElementById("cardForm");
+    const result = document.getElementById("result");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const prompt = document.getElementById("prompt").value;
+      result.innerHTML = "<p>Generating your card...</p>";
+
+      try {
+        const res = await fetch("https://enigmasyndicate.sggregory76.workers.dev", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+
+        if (!res.ok) throw new Error("Failed to generate card");
+        const html = await res.text();
+        result.innerHTML = html;
+      } catch (err) {
+        result.innerHTML = `<p style="color:red;">❌ Failed to generate card: ${err.message}</p>`;
+      }
+    });
+  </script>
+</body>
+</html>
